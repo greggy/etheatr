@@ -1,0 +1,19 @@
+{application, etheatr,
+ [{description, "An OTP application"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, { etheatr_app, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    cowboy,
+    lager,
+    mongodb
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, []},
+  {licenses, []},
+  {links, []}
+ ]}.
