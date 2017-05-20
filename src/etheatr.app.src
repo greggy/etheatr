@@ -8,7 +8,8 @@
     stdlib,
     cowboy,
     lager,
-    mongodb
+    mongodb,
+    pooler
    ]},
   {env,[]},
   {modules, []},

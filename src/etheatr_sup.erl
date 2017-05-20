@@ -26,9 +26,12 @@ start_link() ->
 %% Supervisor callbacks
 %%====================================================================
 
-%% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
+%%Child :: {Id, StartFunc, Restart, Shutdown, Type, Modules}
 init([]) ->
-    {ok, { {one_for_all, 0, 1}, []} }.
+    ManagerSpec = {etheatr_manager, {etheatr_manager, start_link, []},
+                   permanent, 1000, supervisor, [etheatr_worker]},
+    PoolSpec = etheatr_util:pool_spec(),
+    {ok, { {one_for_one, 3, 60}, [PoolSpec, ManagerSpec]} }.
 
 %%====================================================================
 %% Internal functions

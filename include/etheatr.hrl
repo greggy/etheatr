@@ -1,0 +1,1 @@
+-define(MOVIE_COLLECTION, <<"movie">>).
