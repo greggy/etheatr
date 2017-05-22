@@ -32,11 +32,11 @@
 %% @doc
 %% Starts the server
 %%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
+%% @spec start_link(binary(), binary()) -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
 start_link(ScreenId, ImdbId) ->
-    Name = list_to_atom("scraper_" ++ atom_to_list(ScreenId)),
+    Name = binary_to_atom(iolist_to_binary(["scraper_", ScreenId]), utf8),
     gen_server:start_link({local, Name}, ?MODULE, [ScreenId, ImdbId], []).
 
 %%%===================================================================
@@ -55,6 +55,7 @@ start_link(ScreenId, ImdbId) ->
 %% @end
 %%--------------------------------------------------------------------
 init([ScreenId, ImdbId]) ->
+    process_flag(trap_exit, true),
     lager:info("Start scraper info for screen ~p imdb ~p", [ScreenId, ImdbId]),
     gen_server:cast(self(), fetch_data),
     {ok, #state{screen_id=ScreenId, imdb_id=ImdbId}}.
@@ -88,10 +89,10 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast(fetch_data, #state{imdb_id=ImdbId}=State) ->
-    ImdbApi = application:get_env(etheatr, imdb_api, <<"">>),
-    Url = ImdbApi ++ binary_to_list(ImdbId),
+    ImdbApi = application:get_env(etheatr, imdb_api, ""),
+    ImdbApiKey = application:get_env(etheatr, imdb_api_key, ""),
+    Url = ImdbApi ++ binary_to_list(ImdbId) ++ "?external_source=imdb_id&language=en-US&api_key=" ++ ImdbApiKey,
     hackney:get(Url, [], <<>>, [async, {stream_to, self()}]),
-    lager:info("Url ~p", [Url]),
     {noreply, State};
 handle_cast(Msg, State) ->
     lager:info("Catch unhendled cast message ~p", [Msg]),
@@ -107,6 +108,16 @@ handle_cast(Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_info({hackney_response, _Port, Body}, State) when is_binary(Body) ->
+    BodyJson = jsx:decode(Body),
+    case lists:keyfind(<<"movie_results">>, 1, BodyJson) of
+        {<<"movie_results">>, [Results]} ->
+            {<<"original_title">>, Title} = lists:keyfind(<<"original_title">>, 1, Results),
+            ok = etheatr_worker:set_title(State#state.screen_id, State#state.imdb_id, Title);
+        _ ->
+            lager:warning("Can't find movie results in ~p", [BodyJson])
+    end,
+    {stop, normal, State};
 handle_info(Info, State) ->
     lager:info("Catch unhendled info message ~p", [Info]),
     {noreply, State}.
@@ -122,7 +133,8 @@ handle_info(Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
+terminate(Reason, _State) ->
+    lager:info("Scraper worker has stoped with reason ~p", [Reason]),
     ok.
 
 %%--------------------------------------------------------------------

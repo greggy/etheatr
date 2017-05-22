@@ -13,7 +13,8 @@
 -include("etheatr.hrl").
 
 %% API
--export([start_link/2, start_link/3, stop/2, get_seat/2]).
+-export([start_link/2, start_link/3, stop/2, get_seat/2,
+         set_title/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -58,12 +59,24 @@ stop(ScreenId, ImdbId) ->
 %% @doc
 %% Get seat for movie
 %%
-%% @spec get_seat(list()) -> {ok, SeatCap} | {error, cap_full}.
+%% @spec get_seat(binary(), binary) -> {ok, SeatCap} |
+%%                                     {error, cap_full}
 %% @end
 %%--------------------------------------------------------------------
 get_seat(ScreenId, ImdbId) ->
     Name = etheatr_util:generate_name(ScreenId, ImdbId),
     gen_server:call(Name, get_seat).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Set a title for movie
+%%
+%% @spec set_title(binary(), binary()) -> ok
+%% @end
+%%--------------------------------------------------------------------
+set_title(ScreenId, ImdbId, Title) ->
+    Name = etheatr_util:generate_name(ScreenId, ImdbId),
+    gen_server:cast(Name, {update, Title}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -149,6 +162,7 @@ handle_cast(create, #state{screen_id=ScreenId, imdb_id=ImdbId, limit=Limit}=Stat
                            <<"availableSeats">> => Limit,
                            <<"reservedSeats">> => 0}
                         ),
+    etheatr_scraper_sup:start_scraper(ScreenId, ImdbId),
     {noreply, State};
 handle_cast(update, #state{screen_id=ScreenId, imdb_id=ImdbId}=State) ->
     {_Type, Connection} = etheatr_util:take_or_new(),
@@ -161,6 +175,14 @@ handle_cast(update, #state{screen_id=ScreenId, imdb_id=ImdbId}=State) ->
             SeatCap = maps:get(<<"reservedSeats">>, Result),
             {noreply, State#state{limit=Limit, seat_cap=SeatCap}}
     end;
+handle_cast({update, Title}, #state{screen_id=ScreenId, imdb_id=ImdbId}=State) ->
+    {_Type, Connection} = etheatr_util:take_or_new(),
+    Selector = #{<<"imdbId">> => ImdbId, <<"screenId">> => ScreenId},
+    Command = #{<<"$set">> => #{
+                    <<"movieTitle">> => Title
+                   }},
+    mc_worker_api:update(Connection, ?MOVIE_COLLECTION, Selector, Command),
+    {noreply, State};
 handle_cast(Msg, State) ->
     lager:info("Catch unhadled cast message ~p", [Msg]),
     {noreply, State}.

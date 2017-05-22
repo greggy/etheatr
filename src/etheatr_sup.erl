@@ -28,10 +28,14 @@ start_link() ->
 
 %%Child :: {Id, StartFunc, Restart, Shutdown, Type, Modules}
 init([]) ->
-    ManagerSpec = {etheatr_manager, {etheatr_manager, start_link, []},
-                   permanent, 1000, supervisor, [etheatr_worker]},
+    ManagerSpec =
+        {etheatr_manager, {etheatr_manager, start_link, []},
+         permanent, 1000, supervisor, [etheatr_worker]},
+    ScraperSupSpec =
+        {etheatr_scraper_sup, {etheatr_scraper_sup, start_link, []},
+         permanent, 1000, supervisor, [etheatr_scraper_sup]},
     PoolSpec = etheatr_util:pool_spec(),
-    {ok, { {one_for_one, 3, 60}, [PoolSpec, ManagerSpec]} }.
+    {ok, { {one_for_one, 3, 60}, [PoolSpec, ManagerSpec, ScraperSupSpec]} }.
 
 %%====================================================================
 %% Internal functions
