@@ -4,16 +4,14 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 18 May 2017 by greg <>
+%%% Created : 20 May 2017 by greg <>
 %%%-------------------------------------------------------------------
--module(etheatr_worker).
+-module(etheatr_scraper).
 
 -behaviour(gen_server).
 
--include("etheatr.hrl").
-
 %% API
--export([start_link/2, start_link/3, stop/2, get_seat/2]).
+-export([start_link/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -22,10 +20,8 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
-          screen_id :: atom() | list(),
-          imdb_id :: binary(),
-          limit :: pos_integer(),
-          seat_cap=0 :: non_neg_integer()
+          screen_id :: atom(),
+          imdb_id :: binary()
          }).
 
 %%%===================================================================
@@ -36,34 +32,12 @@
 %% @doc
 %% Starts the server
 %%
-%% @spec start_link(atom(), binary(), pos_integer()) ->
-%%                                 {ok, Pid} | ignore | {error, Error}
+%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(ScreenId, ImdbId, Limit) ->
-    Name = etheatr_util:generate_name(ScreenId, ImdbId),
-    lager:info("New Name ~p", [Name]),
-    gen_server:start_link({local, Name}, ?MODULE, [ScreenId, ImdbId, Limit], []).
-
 start_link(ScreenId, ImdbId) ->
-    Name = etheatr_util:generate_name(ScreenId, ImdbId),
-    lager:info("Old Name ~p", [Name]),
+    Name = list_to_atom("scraper_" ++ atom_to_list(ScreenId)),
     gen_server:start_link({local, Name}, ?MODULE, [ScreenId, ImdbId], []).
-
-stop(ScreenId, ImdbId) ->
-    Name = etheatr_util:generate_name(ScreenId, ImdbId),
-    gen_server:call(Name, stop).
-
-%%--------------------------------------------------------------------
-%% @doc
-%% Get seat for movie
-%%
-%% @spec get_seat(list()) -> {ok, SeatCap} | {error, cap_full}.
-%% @end
-%%--------------------------------------------------------------------
-get_seat(ScreenId, ImdbId) ->
-    Name = etheatr_util:generate_name(ScreenId, ImdbId),
-    gen_server:call(Name, get_seat).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -81,17 +55,9 @@ get_seat(ScreenId, ImdbId) ->
 %% @end
 %%--------------------------------------------------------------------
 init([ScreenId, ImdbId]) ->
-    process_flag(trap_exit, true),
-    Name = etheatr_util:generate_name(ScreenId, ImdbId),
-    lager:info("Start OLD screen with name ~p", [Name]),
-    gen_server:cast(Name, update),
-    {ok, #state{screen_id=ScreenId, imdb_id=ImdbId}};
-init([ScreenId, ImdbId, Limit]) ->
-    process_flag(trap_exit, true),
-    Name = etheatr_util:generate_name(ScreenId, ImdbId),
-    lager:info("Start NEW screen with name ~p", [Name]),
-    gen_server:cast(Name, create),
-    {ok, #state{screen_id=ScreenId, imdb_id=ImdbId, limit=Limit}}.
+    lager:info("Start scraper info for screen ~p imdb ~p", [ScreenId, ImdbId]),
+    gen_server:cast(self(), fetch_data),
+    {ok, #state{screen_id=ScreenId, imdb_id=ImdbId}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -107,27 +73,8 @@ init([ScreenId, ImdbId, Limit]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call(get_seat, _From, #state{screen_id=ScreenId, imdb_id=ImdbId,
-                                    limit=Limit, seat_cap=SeatCap}=State) ->
-    case SeatCap < Limit of
-        true ->
-            {_Type, Connection} = etheatr_util:take_or_new(),
-            Command = #{<<"$set">> => #{
-                            <<"reservedSeats">> => SeatCap+1
-                           }},
-            mc_worker_api:update(Connection, ?MOVIE_COLLECTION,
-                                 #{<<"screenId">> => ScreenId,
-                                   <<"imdbId">> => ImdbId},
-                                 Command),
-            {reply, {ok, SeatCap+1}, State#state{seat_cap=SeatCap+1}};
-        false ->
-            {reply, {error, cap_full}, State}
-    end;
-handle_call(stop, _From, State) ->
-    {stop, normal, State};
-handle_call(Request, _From, State) ->
+handle_call(_Request, _From, State) ->
     Reply = ok,
-    lager:info("Catch unhadled call message ~p", [Request]),
     {reply, Reply, State}.
 
 %%--------------------------------------------------------------------
@@ -140,29 +87,14 @@ handle_call(Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast(create, #state{screen_id=ScreenId, imdb_id=ImdbId, limit=Limit}=State) ->
-    {_Type, Connection} = etheatr_util:take_or_new(),
-    mc_worker_api:insert(Connection, ?MOVIE_COLLECTION,
-                         #{<<"imdbId">> => ImdbId,
-                           <<"screenId">> => ScreenId,
-                           <<"movieTitle">> => <<"In Progress ...">>,
-                           <<"availableSeats">> => Limit,
-                           <<"reservedSeats">> => 0}
-                        ),
+handle_cast(fetch_data, #state{imdb_id=ImdbId}=State) ->
+    ImdbApi = application:get_env(etheatr, imdb_api, <<"">>),
+    Url = ImdbApi ++ binary_to_list(ImdbId),
+    hackney:get(Url, [], <<>>, [async, {stream_to, self()}]),
+    lager:info("Url ~p", [Url]),
     {noreply, State};
-handle_cast(update, #state{screen_id=ScreenId, imdb_id=ImdbId}=State) ->
-    {_Type, Connection} = etheatr_util:take_or_new(),
-    Selector = #{<<"imdbId">> => ImdbId, <<"screenId">> => ScreenId},
-    case mc_worker_api:find_one(Connection, ?MOVIE_COLLECTION, Selector) of
-        undefined ->
-            {stop, normal, State};
-        Result ->
-            Limit = maps:get(<<"availableSeats">>, Result),
-            SeatCap = maps:get(<<"reservedSeats">>, Result),
-            {noreply, State#state{limit=Limit, seat_cap=SeatCap}}
-    end;
 handle_cast(Msg, State) ->
-    lager:info("Catch unhadled cast message ~p", [Msg]),
+    lager:info("Catch unhendled cast message ~p", [Msg]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -176,7 +108,7 @@ handle_cast(Msg, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info(Info, State) ->
-    lager:info("Catch unhadled info message ~p", [Info]),
+    lager:info("Catch unhendled info message ~p", [Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -190,8 +122,7 @@ handle_info(Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(Reason, _State) ->
-    lager:info("Worker was stoped with reason ~p", [Reason]),
+terminate(_Reason, _State) ->
     ok.
 
 %%--------------------------------------------------------------------

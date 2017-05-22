@@ -6,10 +6,14 @@
   {applications,
    [kernel,
     stdlib,
+    inets,
+
     cowboy,
     lager,
     mongodb,
-    pooler
+    pooler,
+    hackney,
+    jsx
    ]},
   {env,[]},
   {modules, []},

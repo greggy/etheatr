@@ -15,6 +15,13 @@
 %%====================================================================
 
 start(_StartType, _StartArgs) ->
+    Dispatch = cowboy_router:compile(
+                 [
+                  {'_', [{'_', etheatr_web, []}]}
+                 ]),
+    {ok, _} = cowboy:start_http(http, 10, [{port, 8080}], [
+                                 {env, [{dispatch, Dispatch}]}
+                                ]),
     etheatr_sup:start_link().
 
 %%--------------------------------------------------------------------

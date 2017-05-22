@@ -77,9 +77,21 @@ init([]) ->
 %%% Internal functions
 %%%===================================================================
 
-child_spec(Args) ->
+child_spec([ScreenId, ImdbId|_]=Args) ->
     Restart = permanent,
     Shutdown = 2000,
     Type = worker,
-    {hd(Args), {etheatr_worker, start_link, Args},
+    Name = etheatr_util:generate_name(ScreenId, ImdbId),
+    {Name, {etheatr_worker, start_link, Args},
      Restart, Shutdown, Type, [etheatr_worker]}.
+
+
+
+
+
+
+
+
+
+
+
