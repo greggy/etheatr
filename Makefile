@@ -21,6 +21,9 @@ rebuild:
 	$(REBAR) new release etheatr
 	$(REBAR) release
 
+tests:
+	$(REBAR) ct
+
 all: clean compile release
 
 
