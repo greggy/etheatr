@@ -9,6 +9,12 @@ tickets in a cinema. The main data is Screen Id and Imdb Id.
  - Screen Id is the room identication;
  - Imdb Id is the identificator from IMDB.
 
+Database
+--------
+
+The project uses mongodb as database. I use this [project](https://github.com/greggy/vagrant-ansible-mongodb)
+that helps me to start up virtual box with fresh mongodb-server.
+
 How To Compile, Build And Start The Project
 -----------------------------------------
 
