@@ -31,3 +31,13 @@ How To Run Tests
 ---------------
 
     $ make tests
+
+Web API
+-------
+
+URL | Method | Args | Description
+--- | ---- | ----------- | ------------
+/movie/lists | GET | {} | List of screens
+/movie/add | PUT | screen_id, imdb_id, limit | Create the new screen
+/movie/ScreenId | GET | {} | Get screen info
+/movie/get_seat | PUT | screen_id, imdb_id | Get a seet in the screen
